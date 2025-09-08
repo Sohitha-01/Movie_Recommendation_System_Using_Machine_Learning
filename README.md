@@ -108,7 +108,7 @@ approx_title = fuzzy_match("Avatr", titles_index)
 ## Streamlit App
 We provide a **Streamlit web app** for interactive exploration and recommendations:  
 
-👉 [Check it Out](https://movie-recommendations-ysytem.streamlit.app/)  
+👉 [Check it Out](https://movie-recommendation-system3.streamlit.app/)  
 
 Features:
 - Search movie titles with autocomplete + fuzzy matching  
