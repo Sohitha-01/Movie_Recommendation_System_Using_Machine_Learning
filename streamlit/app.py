@@ -114,7 +114,7 @@ def split_tokens(s: str):
 # =======================
 # UI
 # =======================
-st.title("🎬 Movie Recommendation System — Remote Data")
+st.title("🎬 Movie Recommendation System")
 
 with st.status("Fetching dataset URL from secrets...", expanded=False) as s:
     data_url, hf_token = _get_secret_url()
