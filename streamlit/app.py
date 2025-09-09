@@ -18,6 +18,16 @@ from sklearn.linear_model import LinearRegression
 from sklearn.metrics import r2_score, mean_absolute_error, mean_squared_error
 from difflib import get_close_matches
 
+# --- ADDED: quick URL health checker for Secrets ---
+def _head_status(url: str) -> str:
+    import requests
+    try:
+        r = requests.head(url, allow_redirects=True, timeout=20)
+        return f"{r.status_code} {r.headers.get('Content-Type', '')}"
+    except Exception as e:
+        return f"HEAD failed: {e}"
+# --- END ADDED ---
+
 st.set_page_config(page_title="Movie Recommender (TMDB) – Enhanced", layout="wide")
 
 # -----------------------------
@@ -46,7 +56,7 @@ def _fetch_csv(url: str) -> pd.DataFrame:
 
 @st.cache_data(show_spinner=False)
 def load_data():
-    """Keep the original behavior (local files) but add Secrets fallback (Path B)."""
+    """Local files first; then Secrets fallback (Path B). Returns (df, source_str)."""
     # 1) Local files (original behavior)
     for p in ["movies.csv", "tmdb_5000_movies.csv"]:
         try:
@@ -56,27 +66,32 @@ def load_data():
         except Exception:
             continue
 
-    # 2) Secrets fallback (Path B)
-    # Try 'movies' first (single dataset), else tmdb_5000 pair
-    keys = ["movies", "tmdb_5000_movies"]
-    for k in keys:
-        url = st.secrets.get(k, "")
+    # 2) Secrets fallback (prefer 'movies', else 'tmdb_5000_movies') with diagnostics
+    tried = []
+    for key in ["movies", "tmdb_5000_movies"]:
+        url = st.secrets.get(key, "")
         if isinstance(url, str) and url.startswith(("http://", "https://")):
+            tried.append((key, url))
             try:
                 df = _fetch_csv(url)
-                src = f"secrets:{k}"
+                src = f"secrets:{key}"
                 return df, src
-            except Exception:
-                pass
+            except Exception as e:
+                tried[-1] = (key, url, f"FETCH ERROR: {e}")
 
-    # If single dataset not available, try pairing tmdb_5000_movies + credits by
-    # loading movies table only (the UI works without credits)
-    url = st.secrets.get("tmdb_5000_movies", "")
-    if isinstance(url, str) and url.startswith(("http://", "https://")):
-        df = _fetch_csv(url)
-        return df, "secrets:tmdb_5000_movies"
+    # 3) Nothing worked: surface exactly what we tried
+    def _fmt(t):
+        k, u = t[0], t[1]
+        hs = _head_status(u)
+        extra = f" | {t[2]}" if len(t) == 3 else ""
+        return f"{k} -> {hs}{extra}"
 
-    return None, None
+    detail = "; ".join(_fmt(t) for t in tried) if tried else "No valid URLs in Secrets."
+    raise RuntimeError(
+        "No data loaded. Either put CSVs in repo root or set Secrets.\n"
+        "Checked keys: movies / tmdb_5000_movies.\n"
+        f"Diagnostics: {detail}"
+    )
 
 # -----------------------------
 # Helpers
@@ -184,6 +199,19 @@ def get_unique_years(df):
 # Load Data
 # -----------------------------
 df, source = load_data()
+
+# --- ADDED: visibility into secrets/URLs and the loaded DF ---
+with st.expander("🔎 Data diagnostics"):
+    st.write("Source:", source)
+    for key in ["movies", "tmdb_5000_movies", "tmdb_5000_credits"]:
+        val = st.secrets.get(key, "")
+        st.write(f"Secret `{key}` present:", bool(val))
+        if isinstance(val, str) and val.startswith(("http://", "https://")):
+            st.write(f"HEAD {key} → {_head_status(val)}")
+    st.write("Loaded shape:", df.shape)
+    st.dataframe(df.head(5), use_container_width=True)
+# --- END ADDED ---
+
 st.title("🎬 Movie Recommendation System (Content-Based)")
 if df is None:
     st.warning("Couldn't find data locally and no valid URLs in Secrets. Add:\n- `movies` OR `tmdb_5000_movies` to **Settings → Secrets** (Hugging Face 'resolve' URLs).")
